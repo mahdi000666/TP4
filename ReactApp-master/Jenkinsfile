@@ -10,11 +10,11 @@ pipeline {
 
     environment {
         // ID des credentials Docker Hub (Jenkins > Credentials)
-        DOCKERHUB_CREDENTIALS_ID = 'dockerhub-cred'
+        DOCKERHUB_CREDENTIALS_ID = 'dockerhub-creds'
 
         // Noms des images Docker Hub
-        IMAGE_NAME_SERVER = 'wiemkbaier/mern-server'
-        IMAGE_NAME_CLIENT = 'wiemkbaier/mern-client'
+        IMAGE_NAME_SERVER = 'mahdi000666/mern-server'
+        IMAGE_NAME_CLIENT = 'mahdi000666/mern-client'
     }
 
     stages {
