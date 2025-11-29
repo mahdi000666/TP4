@@ -22,6 +22,9 @@ pipeline {
         }
 
         stage('Build Server Image') {
+            when {
+                changeset "server/**"
+            }
             steps {
                 dir('server') {
                     script {
@@ -32,6 +35,9 @@ pipeline {
         }
 
         stage('Build Client Image') {
+            when {
+                changeset "client/**"
+            }
             steps {
                 dir('client') {
                     script {
@@ -44,19 +50,31 @@ pipeline {
         stage('Scan Images') {
             parallel {
                 stage('Scan Server') {
+                    when {
+                        changeset "server/**"
+                    }
                     steps {
                         script {
                             bat """
-                            docker run --rm -v //var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity LOW,MEDIUM,HIGH,CRITICAL ${IMAGE_NAME_SERVER}:latest
+                            docker run --rm ^
+                            -v //var/run/docker.sock:/var/run/docker.sock ^
+                            -v trivy-cache:/root/.cache/ ^
+                            aquasec/trivy:latest image --exit-code 0 --severity CRITICAL ${IMAGE_NAME_SERVER}:latest
                             """
                         }
                     }
                 }
                 stage('Scan Client') {
+                    when {
+                        changeset "client/**"
+                    }
                     steps {
                         script {
                             bat """
-                            docker run --rm -v //var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity LOW,MEDIUM,HIGH,CRITICAL ${IMAGE_NAME_CLIENT}:latest
+                            docker run --rm ^
+                            -v //var/run/docker.sock:/var/run/docker.sock ^
+                            -v trivy-cache:/root/.cache/ ^
+                            aquasec/trivy:latest image --exit-code 0 --severity CRITICAL ${IMAGE_NAME_CLIENT}:latest
                             """
                         }
                     }
@@ -68,12 +86,23 @@ pipeline {
             steps {
                 script {
                     timeout(time: 10, unit: 'MINUTES') {
-                        docker.withRegistry('https://index.docker.io/v1/', DOCKERHUB_CREDENTIALS_ID) {
-                            retry(2) {
-                                dockerImageServer.push('latest')
-                            }
-                            retry(2) {
-                                dockerImageClient.push('latest')
+                        withCredentials([usernamePassword(
+                            credentialsId: DOCKERHUB_CREDENTIALS_ID,
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            script {
+                                // Only push server if it changed
+                                if (dockerImageServer) {
+                                    bat "echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin"
+                                    bat "docker push ${IMAGE_NAME_SERVER}:latest"
+                                }
+                                // Only push client if it changed
+                                if (dockerImageClient) {
+                                    bat "echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin"
+                                    bat "docker push ${IMAGE_NAME_CLIENT}:latest"
+                                }
+                                bat "docker logout"
                             }
                         }
                     }
@@ -84,7 +113,10 @@ pipeline {
 
     post {
         always {
-            bat 'docker system prune -f'
+            bat '''
+            docker system prune -f
+            docker image prune -a -f
+            '''
         }
         success {
             echo 'Pipeline succeeded!'
