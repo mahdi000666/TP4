@@ -9,10 +9,7 @@ pipeline {
     }
 
     environment {
-        // ID des credentials Docker Hub (Jenkins > Credentials)
         DOCKERHUB_CREDENTIALS_ID = 'dockerhub-creds'
-
-        // Noms des images Docker Hub
         IMAGE_NAME_SERVER = 'mahdi000666/mern-server'
         IMAGE_NAME_CLIENT = 'mahdi000666/mern-client'
     }
@@ -44,22 +41,25 @@ pipeline {
             }
         }
 
-        stage('Scan Server Image') {
-            steps {
-                script {
-                    bat """
-                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity LOW,MEDIUM,HIGH,CRITICAL ${IMAGE_NAME_SERVER}:latest
-                    """
+        stage('Scan Images') {
+            parallel {
+                stage('Scan Server') {
+                    steps {
+                        script {
+                            bat """
+                            docker run --rm -v //var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity LOW,MEDIUM,HIGH,CRITICAL ${IMAGE_NAME_SERVER}:latest
+                            """
+                        }
+                    }
                 }
-            }
-        }
-
-        stage('Scan Client Image') {
-            steps {
-                script {
-                    bat """
-                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity LOW,MEDIUM,HIGH,CRITICAL ${IMAGE_NAME_CLIENT}:latest
-                    """
+                stage('Scan Client') {
+                    steps {
+                        script {
+                            bat """
+                            docker run --rm -v //var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity LOW,MEDIUM,HIGH,CRITICAL ${IMAGE_NAME_CLIENT}:latest
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -67,12 +67,30 @@ pipeline {
         stage('Push Images to Docker Hub') {
             steps {
                 script {
-                    docker.withRegistry('', DOCKERHUB_CREDENTIALS_ID) {
-                        dockerImageServer.push('latest')
-                        dockerImageClient.push('latest')
+                    timeout(time: 10, unit: 'MINUTES') {
+                        docker.withRegistry('https://index.docker.io/v1/', DOCKERHUB_CREDENTIALS_ID) {
+                            retry(2) {
+                                dockerImageServer.push('latest')
+                            }
+                            retry(2) {
+                                dockerImageClient.push('latest')
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            bat 'docker system prune -f'
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed!'
         }
     }
 }
